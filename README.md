@@ -84,7 +84,7 @@ esc     退出
 
 ```bash
 cd /home/HwHiAiUser/E2ESamples/src/E2E-Sample/Car22
-python3 camera/camera_debug_stream.py --camera 0 --width 1280 --height 720 --fps 30 --port 8080 --crosshair
+python3 camera/camera_debug_stream.py --camera 0 --max-camera-index 5 --width 1280 --height 720 --fps 30 --port 8080 --crosshair
 ```
 
 本机另开终端：
@@ -129,9 +129,3 @@ python3 -m pip install --force-reinstall pyserial==3.5
 - 启动太猛：适当减小 `START_KICK_PWM` 或 `START_KICK_MS`。
 - 只有 USB 供电时电机不转：电机需要独立电源，USB 只负责 ESP32 通信和供电。
 - 普通 PC 无法直接运行完整 `python/main.py`：`acl`、`ais_bench`、`torch`、`torchvision` 等推理组件依赖 Atlas/CANN 环境。
-
-## 推送仓库前建议
-
-- 不提交 `__pycache__/`、`.pyc`、临时日志和采集图片。
-- 先确认 Arduino IDE 当前烧录的是 `car_ctrl_esp32_pwm`。
-- 先在小车架空状态下跑通 `motion_test.py --mode sequence`。

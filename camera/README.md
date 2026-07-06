@@ -7,13 +7,13 @@
 从 `Car22` 目录运行：
 
 ```bash
-python3 camera/camera_debug_stream.py --camera 0 --width 1280 --height 720 --fps 30 --port 8080 --crosshair
+python3 camera/camera_debug_stream.py --camera 0 --max-camera-index 5 --width 1280 --height 720 --fps 30 --port 8080 --crosshair
 ```
 
 或者进入 `Car22/camera` 后运行：
 
 ```bash
-python3 camera_debug_stream.py --camera 0 --width 1280 --height 720 --fps 30 --port 8080 --crosshair
+python3 camera_debug_stream.py --camera 0 --max-camera-index 5 --width 1280 --height 720 --fps 30 --port 8080 --crosshair
 ```
 
 启动后终端会打印 SSH 转发提示。脚本默认只监听 `127.0.0.1`，适合通过 SSH tunnel 从本机访问。
@@ -43,7 +43,8 @@ http://127.0.0.1:8080
 
 ## 常用参数
 
-- `--camera 0`：OpenCV 摄像头编号，打不开时可尝试 `--camera 1`、`--camera 2`。
+- `--camera 0`：首选 OpenCV 摄像头编号。
+- `--max-camera-index 5`：如果首选编号不可用，继续扫描 `0..5` 中第一个可读摄像头。
 - `--width 1280 --height 720`：采集分辨率。
 - `--fps 30`：目标帧率。
 - `--quality 80`：JPEG 压缩质量，范围 `1..100`。
@@ -58,7 +59,7 @@ http://127.0.0.1:8080
 ## 常见问题
 
 - 页面一直等待：确认小车端脚本还在运行，且浏览器访问的是本机 `127.0.0.1:8080`。
-- 提示无法打开摄像头：尝试 `--camera 1` 或 `--camera 2`，也可以在小车上检查 `/dev/video*`。
+- 提示无法打开摄像头：检查 `/dev/video*`，必要时增大 `--max-camera-index`。
 - 本机打不开页面：确认 SSH 转发命令没有退出。
 - 画面方向不对：使用 `--flip 0/1/2` 调整。
 - 占用端口：把小车端脚本和 SSH 转发命令里的 `8080` 同时换成另一个端口，例如 `8081`。

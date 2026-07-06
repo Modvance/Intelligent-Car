@@ -118,11 +118,28 @@ esc     退出
 - 某个轮子方向反了，优先在 ESP32 端通过 `MOTOR_SIGN` 修正。
 - 当前基础运动版本不依赖 ESP32 编码器 PID。
 
+## 摄像头自动检索
+
+主程序启动摄像头时，会优先尝试 `src/utils/constant.py` 中 `CAMERA_INFO` 配置的摄像头编号：
+
+```python
+CAMERA_INFO = {
+    'height': 720,
+    'width': 1280,
+    'fps': 30,
+    'camera': 0,
+    'max_camera_index': 5
+}
+```
+
+如果 `camera` 指定的编号不可用，程序会继续扫描 `0..max_camera_index`，使用第一个能成功打开并读取画面的摄像头。这样即使进程残留导致摄像头从 `/dev/video0` 变成 `/dev/video1`，通常也不需要手动改代码。
+
 ## 常见问题
 
 - 找不到 ESP32 串口：先运行 `python3 motion_test.py --list-ports`，确认是否存在 `/dev/ttyUSB0`。
 - 命令返回 `FAIL`：检查 ESP32 是否烧录了兼容 14 字节二进制协议的程序。
 - 小车低速不启动：调整 ESP32 端 `START_KICK_PWM` 或 `START_KICK_MS`。
 - 小车方向不对：先架空测试，再修改 ESP32 端 `MOTOR_SIGN`。
+- 摄像头打不开：检查 `/dev/video*`，必要时增大 `CAMERA_INFO['max_camera_index']`。
 - 普通 PC 无法直接运行完整 `main.py`：视觉推理相关代码依赖 Atlas/CANN 环境。
-  - `torchvision` 的图片扩展 warning 如果不影响程序启动，可以暂时忽略。
+- `torchvision` 的图片扩展 warning 如果不影响程序启动，可以暂时忽略。

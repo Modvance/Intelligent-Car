@@ -31,7 +31,9 @@ ACL_BOOL = 12
 CAMERA_INFO = {
     'height': 720,
     'width': 1280,
-    'fps': 30
+    'fps': 30,
+    'camera': 0,
+    'max_camera_index': 5
 }
 
 PORT_CODE_FINDER = '''

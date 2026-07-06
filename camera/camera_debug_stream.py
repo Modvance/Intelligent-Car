@@ -16,6 +16,7 @@ BOUNDARY = "frame"
 @dataclass
 class CameraConfig:
     camera: int = 0
+    max_camera_index: int = 5
     width: int = 1280
     height: int = 720
     fps: int = 30
@@ -138,6 +139,64 @@ def import_cv2():
     return cv2
 
 
+def candidate_camera_indices(preferred_index: int, max_camera_index: int) -> list[int]:
+    candidates = []
+    if preferred_index >= 0:
+        candidates.append(preferred_index)
+
+    for index in range(max(0, max_camera_index) + 1):
+        if index not in candidates:
+            candidates.append(index)
+
+    return candidates
+
+
+def open_capture(cv2, camera_index: int):
+    cap = cv2.VideoCapture()
+    try:
+        opened = cap.open(camera_index, apiPreference=cv2.CAP_V4L2)
+    except TypeError:
+        opened = cap.open(camera_index)
+
+    if not opened and hasattr(cap, "isOpened"):
+        opened = cap.isOpened()
+
+    return cap, bool(opened)
+
+
+def configure_capture(cv2, cap, config: CameraConfig) -> None:
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc("M", "J", "P", "G"))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.height)
+    cap.set(cv2.CAP_PROP_FPS, config.fps)
+
+
+def capture_returns_frame(cap) -> bool:
+    for _ in range(3):
+        ok, frame = cap.read()
+        if ok and frame is not None:
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def open_first_readable_camera(cv2, config: CameraConfig):
+    candidates = candidate_camera_indices(config.camera, config.max_camera_index)
+    for camera_index in candidates:
+        cap, opened = open_capture(cv2, camera_index)
+        if not opened:
+            cap.release()
+            continue
+
+        configure_capture(cv2, cap, config)
+        if capture_returns_frame(cap):
+            return cap, camera_index
+
+        cap.release()
+
+    raise RuntimeError(f"Failed to open a readable camera. Tried camera indices: {candidates}")
+
+
 def draw_crosshair(cv2, frame) -> None:
     height, width = frame.shape[:2]
     center_x = width // 2
@@ -165,16 +224,14 @@ def apply_overlays(cv2, frame, config: CameraConfig):
 
 def camera_loop(config: CameraConfig, store: FrameStore) -> None:
     cv2 = import_cv2()
-    cap = cv2.VideoCapture()
-    cap.open(config.camera, apiPreference=cv2.CAP_V4L2)
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc("M", "J", "P", "G"))
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.height)
-    cap.set(cv2.CAP_PROP_FPS, config.fps)
-
-    if not cap.isOpened():
-        store.set_error(f"Failed to open camera {config.camera}")
+    try:
+        cap, camera_index = open_first_readable_camera(cv2, config)
+    except RuntimeError as exc:
+        store.set_error(str(exc))
         return
+
+    config.camera = camera_index
+    print(f"Camera opened on index {camera_index}")
 
     encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), int(config.jpeg_quality)]
     frame_interval = 1.0 / max(config.fps, 1)
@@ -269,7 +326,8 @@ def make_handler(config: CameraConfig, store: FrameStore):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Serve a USB camera as an MJPEG stream for SSH camera adjustment.")
-    parser.add_argument("--camera", type=int, default=0, help="OpenCV camera index")
+    parser.add_argument("--camera", type=int, default=0, help="preferred OpenCV camera index")
+    parser.add_argument("--max-camera-index", type=int, default=5, help="scan camera indices from 0 to this value")
     parser.add_argument("--width", type=int, default=1280)
     parser.add_argument("--height", type=int, default=720)
     parser.add_argument("--fps", type=int, default=30)
@@ -286,6 +344,7 @@ def build_parser() -> argparse.ArgumentParser:
 def config_from_args(args: argparse.Namespace) -> CameraConfig:
     return CameraConfig(
         camera=args.camera,
+        max_camera_index=args.max_camera_index,
         width=args.width,
         height=args.height,
         fps=args.fps,
