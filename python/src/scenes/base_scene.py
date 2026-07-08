@@ -19,6 +19,11 @@ class BaseScene(ABC):
         self.height = self.camera_info.get('height', 720)
         self.width = self.camera_info.get('width', 1280)
         self.fps = self.camera_info.get('fps', 30)
+        try:
+            from src.utils.monitoring import publish_scene
+            publish_scene(self.__class__.__name__, status='created')
+        except Exception:
+            pass
 
     @abstractmethod
     def init_state(self):

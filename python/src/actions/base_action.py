@@ -3,6 +3,7 @@
 import time
 from abc import ABC, abstractmethod
 
+paras=0.7
 
 class BaseAction(ABC):
     """
@@ -21,7 +22,7 @@ class BaseAction(ABC):
         self.servo_angle = kwds.get('servo', [-1, -1])
 
         # 根据电机的实际情况修改下发到电机的速度
-        self.motor_rating = [0.5, 0.5, 0.5, 0.5]
+        self.motor_rating = [1.1*paras, 1.1*paras, 1*paras, 1*paras]
 
         # 确定是否需要在运行时根据前动作更新电机角度及电机速度
         self.update_speed = False
@@ -160,11 +161,10 @@ class ShiftLeft(BaseAction):
     """
     向左平移
     """
-
-    def __init__(self, *args, **kwds):
-        super().__init__(*args, **kwds)
-        self.motor_rating = [0.5, 0.5, 0.5, 0.5]
-        self.fix_speed()
+    # def __init__(self, *args, **kwds):
+    #     super().__init__(*args, **kwds)
+    #     self.motor_rating = [0.8, 0.8, 0.8, 0.8]
+    #     self.fix_speed()
 
     @staticmethod
     def generate_speed_setting(speed, degree=0):
@@ -175,6 +175,10 @@ class ShiftRight(BaseAction):
     """
     向右平移
     """
+    # def __init__(self, *args, **kwds):
+    #     super().__init__(*args, **kwds)
+    #     self.motor_rating = [0.8, 0.8, 0.8, 0.8]
+    #     self.fix_speed()
 
     @staticmethod
     def generate_speed_setting(speed, degree=0):

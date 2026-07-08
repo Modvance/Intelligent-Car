@@ -4,13 +4,13 @@
 
 ## 在小车上启动视频流
 
-从 `Car22` 目录运行：
+从 `Car22/python` 目录运行：
 
 ```bash
 python3 camera/camera_debug_stream.py --camera 0 --max-camera-index 5 --width 1280 --height 720 --fps 30 --port 8080 --crosshair
 ```
 
-或者进入 `Car22/camera` 后运行：
+或者进入 `Car22/python/camera` 后运行：
 
 ```bash
 python3 camera_debug_stream.py --camera 0 --max-camera-index 5 --width 1280 --height 720 --fps 30 --port 8080 --crosshair
@@ -63,3 +63,4 @@ http://127.0.0.1:8080
 - 本机打不开页面：确认 SSH 转发命令没有退出。
 - 画面方向不对：使用 `--flip 0/1/2` 调整。
 - 占用端口：把小车端脚本和 SSH 转发命令里的 `8080` 同时换成另一个端口，例如 `8081`。
+

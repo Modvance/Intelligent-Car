@@ -9,3 +9,8 @@ __pycache__/
 pid_debug.csv
 
 capture/
+python/capture/
+python/logs/
+logs/
+temp/
+weights/

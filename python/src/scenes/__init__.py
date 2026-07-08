@@ -3,12 +3,13 @@
 from sys import modules
 
 from src.scenes.helper import Helper
-from src.scenes.lane_following import LF
+# from src.scenes.lane_following import LF
 from src.scenes.manual import Manual
 from src.scenes.tracking import Tracking
 from src.utils import log
+from src.scenes.LANENET import LF_Lanenet
 
-__all__ = ['Manual', 'Tracking', 'Helper', 'LF', 'scene_initiator']
+__all__ = ['Manual', 'Tracking', 'Helper', 'scene_initiator', 'LF_Lanenet']
 
 
 def scene_initiator(name):

@@ -12,8 +12,8 @@ from src.utils.logger import logger_instance as log
 class CameraBroadcaster:
     def __init__(self, camera_info):
         self.camera_info = camera_info
-        self.height = camera_info.get('height', 720)
-        self.width = camera_info.get('width', 1280)
+        self.height = camera_info.get('height', 480)
+        self.width = camera_info.get('width', 640)
         self.fps = camera_info.get('fps', 30)
         self.stop_sign = Value(c_bool, False)
         self.frame = shared_memory.SharedMemory(create=True, size=np.zeros(shape=(self.height, self.width, 3),
@@ -30,6 +30,7 @@ class CameraBroadcaster:
             self.frame.unlink()
             return
 
+        # Check if the camera settings are correct
         actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
         actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
         if actual_width != self.width or actual_height != self.height:
@@ -48,7 +49,7 @@ class CameraBroadcaster:
                     break
                 start = datetime.now()
                 ret, frame = cap.read()
-                if not ret or frame is None:
+                if not ret:
                     log.error('Failed to read frame from camera.')
                     continue
                 if frame.shape[0] != self.height or frame.shape[1] != self.width:

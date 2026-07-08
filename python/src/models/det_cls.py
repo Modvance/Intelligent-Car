@@ -7,7 +7,7 @@ from src.models.bsae_model import Model
 class DetCls(Model):
     def __init__(self, model_path, acl_init=True):
         super().__init__(model_path, acl_init)
-        self.name = ['left', 'right', 'stop', 'aournd']
+        self.name = ['right', 'return', 'left', 'obs','obs1']
 
     def infer(self, inputs):
         image = cv2.resize(inputs, (64, 64))

@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional, Sequence
+from urllib.parse import urlsplit
 
 
 BOUNDARY = "frame"
@@ -129,6 +130,15 @@ def make_tunnel_hint(ssh_target: str, port: int) -> str:
         f"Then open on your PC:\n"
         f"  http://127.0.0.1:{port}\n"
     )
+
+
+def normalize_request_path(raw_path: str) -> str:
+    path = urlsplit(raw_path).path
+    return path or "/"
+
+
+def is_index_path(path: str) -> bool:
+    return path in {"/", "/index.html", "/monitor"}
 
 
 def import_cv2():
@@ -273,13 +283,14 @@ def make_handler(config: CameraConfig, store: FrameStore):
             self.wfile.write(content)
 
         def do_GET(self) -> None:
-            if self.path in {"/", "/index.html"}:
+            path = normalize_request_path(self.path)
+            if is_index_path(path):
                 self.send_bytes(make_index_html(config).encode("utf-8"), "text/html; charset=utf-8")
-            elif self.path == "/snapshot.jpg":
+            elif path == "/snapshot.jpg":
                 self.handle_snapshot()
-            elif self.path == "/stream.mjpg":
+            elif path == "/stream.mjpg":
                 self.handle_stream()
-            elif self.path == "/health":
+            elif path == "/health":
                 self.handle_health()
             else:
                 self.send_error(HTTPStatus.NOT_FOUND, "not found")
@@ -357,6 +368,11 @@ def config_from_args(args: argparse.Namespace) -> CameraConfig:
     )
 
 
+def request_shutdown(store: FrameStore, server: ThreadingHTTPServer) -> None:
+    store.stop()
+    threading.Thread(target=server.shutdown, daemon=True).start()
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     config = config_from_args(args)
@@ -366,10 +382,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     capture_thread.start()
 
     server = ThreadingHTTPServer((config.host, config.port), make_handler(config, store))
+    server.daemon_threads = True
+    shutdown_requested = threading.Event()
 
     def shutdown(_signum=None, _frame=None):
-        store.stop()
-        server.shutdown()
+        if shutdown_requested.is_set():
+            return
+        shutdown_requested.set()
+        print("\nStopping camera stream...")
+        request_shutdown(store, server)
 
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)

@@ -15,6 +15,8 @@ from src.utils.common_utils import SingleTonType
 from src.utils.logger import logger_instance as log
 from src.utils.constant import ESP32_NAME
 from src.utils.init_utils import get_port
+from src.utils.motion_gate import gate_motor_state, is_motion_enabled
+from src.utils.monitoring import publish_controller
 
 
 class Controller(metaclass=SingleTonType):
@@ -56,6 +58,7 @@ class Controller(metaclass=SingleTonType):
 
         # esp32串口信息
         esp32_port = get_port(ESP32_NAME)
+        self._esp32_port = esp32_port
         self._ser = serial.Serial(esp32_port, 115200)
         self._check_val = -12345
 
@@ -71,13 +74,15 @@ class Controller(metaclass=SingleTonType):
 
         # 设置调用__del__方法前调用的去初始化方法
         atexit.register(self._deinit)
+        
+        self._interrupted = False  # 标记当前是否被中断
 
     # 重置电机与舵机状态
     def reset(self):
         self.speed = 0
         self.servo_angle = [90, 65]
         state = [self.speed] * 4 + self.servo_angle + [self._check_val]
-        self.send_to_device(state)
+        self.send_to_device(state, action_name='Reset')
 
     # 执行动作序列
     def execute(self, action):
@@ -108,6 +113,9 @@ class Controller(metaclass=SingleTonType):
 
             # 执行动作序列
             for action in action_seq:
+                if self._interrupted:
+                    log.warn("[Controller] Execution interrupted. Exiting action sequence.")
+                    break  # 提前终止执行
                 # 调用动作的__call__方法
                 state = action(self.speed, self.servo_angle)
                 # 如果当前动作不需要下发指令至ESP32，跳过后续步骤
@@ -115,7 +123,12 @@ class Controller(metaclass=SingleTonType):
                     continue
                 state += [self._check_val]
                 # 下发指令并获取到修改的时间戳
-                ret, modify_time = self.send_to_device(state)
+                action_speed = action.speed if action.speed != -1 else self.speed
+                ret, modify_time = self.send_to_device(
+                    state,
+                    action_name=action.__class__.__name__,
+                    action_speed=action_speed,
+                )
                 log.info(f'action {action.__class__.__name__} execute {ret}')
 
                 # 更新控制器相关信息
@@ -130,8 +143,26 @@ class Controller(metaclass=SingleTonType):
             self._save()
             return 0
 
-    def send_to_device(self, state):
+    def interrupt_and_execute(self, new_action):
+        log.info("[Controller] Interrupting current action and switching...")
+        with self._lock:
+            self._update()  # 加载状态
+            self._interrupted = True  # 设置中断标志
+    
+        # 等待一点点时间让执行动作注意到中断（前提是动作实现中轮询了中断）
+        time.sleep(0.05)
+    
+        with self._lock:
+            self._interrupted = False  # 清除中断
+            self.execute(new_action)   # 立即执行新动作
+
+
+    def send_to_device(self, state, action_name='Command', action_speed=None):
         start = time.time()
+        gated_state = gate_motor_state(state, enabled=is_motion_enabled(default=True))
+        if gated_state != state:
+            log.info(f'motion gate closed, block motor command: {state} -> {gated_state}')
+            state[:] = gated_state
         # 将电机与舵机状态进行编码并进行组合
         msg = b''.join([num.to_bytes(2, byteorder='little', signed=True) for num in state])
         # 下发编码好的14bytes信息至esp32
@@ -141,6 +172,7 @@ class Controller(metaclass=SingleTonType):
             esp32_port = None
             while esp32_port is None:
                 esp32_port = get_port(ESP32_NAME)
+            self._esp32_port = esp32_port
             self._ser = serial.Serial(esp32_port, 115200)
             self._ser.write(msg)
         log.info(f'{state}')
@@ -150,6 +182,16 @@ class Controller(metaclass=SingleTonType):
         if ret == 'FAIL':
             log.warn(f'Ultrasonic obstacle avoidance is activated. Please move the car to a safe position.')
         end = time.time()
+        publish_controller(
+            action_name=action_name,
+            state=state,
+            result=ret,
+            speed=self.speed if action_speed is None else action_speed,
+            servo_angle=state[4:6],
+            serial_port=getattr(self, '_esp32_port', ''),
+            started_at=start,
+            ended_at=end,
+        )
         log.debug(f'action execute cost: {end - start}s')
         return ret, time.time()
 

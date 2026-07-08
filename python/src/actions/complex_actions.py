@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 from abc import ABC
 
-from src.actions.base_action import Advance, Sleep, SpinAntiClockwise, Stop, SpinClockwise, CustomAction, ShiftLeft, \
-    TurnRight
+from src.actions.base_action import Advance, Sleep, SpinAntiClockwise, Stop, SpinClockwise, CustomAction, ShiftLeft, ShiftRight, TurnRight
 
 
 class ComplexAction(ABC):
@@ -20,7 +19,7 @@ class TurnLeftInPlace(ComplexAction):
         super().__init__()
         self.action_seq = [
             Advance(speed=30),
-            Sleep(0.8),
+            Sleep(0.9),
             SpinAntiClockwise(speed=40),
             Sleep(0.5),
             Stop()
@@ -32,9 +31,9 @@ class TurnRightInPlace(ComplexAction):
         super().__init__()
         self.action_seq = [
             Advance(speed=30),
-            Sleep(0.55),
+            Sleep(0.9),
             SpinClockwise(speed=40),
-            Sleep(0.48),
+            Sleep(0.43),
             Stop()
         ]
 
@@ -45,16 +44,16 @@ class TurnAround(ComplexAction):
         self.action_seq = [
             Stop(),
             Sleep(0.1),
-            Advance(speed=30),
-            Sleep(1.55),
+            Advance(speed=28),
+            Sleep(3.2),#1.55,2
             Stop(),
             Sleep(0.3),
-            SpinAntiClockwise(speed=50),
-            Sleep(0.4),
+            SpinAntiClockwise(speed=40),
+            Sleep(0.55),
             Advance(speed=30),
-            Sleep(0.9),
-            SpinAntiClockwise(speed=50),
-            Sleep(0.45),
+            Sleep(1.5),#0.9
+            SpinAntiClockwise(speed=40),
+            Sleep(0.55), #0.45
             Stop(),
 
         ]
@@ -70,7 +69,18 @@ class Start(ComplexAction):
             Advance(speed=25)
         ]
 
-
+class Sto(ComplexAction):
+    def __init__(self):
+        super().__init__()
+        self.update_controller_speed = True
+        self.action_seq = [
+            Stop(),
+            Sleep(2.0),
+            ShiftRight(speed = 50),
+            Sleep(1.5).
+            Stop()
+        ]
+        
 class Parking(ComplexAction):
     def __init__(self):
         super().__init__()
