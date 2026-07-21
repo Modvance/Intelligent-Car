@@ -1,0 +1,13 @@
+builtin_interfaces/Time stamp
+uint32 sequence
+uint16 period_ms
+bool fresh
+float32[4] target_rpm
+float32[4] measured_rpm
+int32[4] tick_delta
+int16[4] pwm
+float32[4] error
+float32[4] p_term
+float32[4] i_term
+float32[4] d_term
+uint8[4] flags

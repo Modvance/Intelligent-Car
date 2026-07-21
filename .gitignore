@@ -14,3 +14,23 @@ python/logs/
 logs/
 temp/
 weights/
+
+# Runtime model files copied onto the car manually.
+python/weights/
+
+# Training datasets, generated artifacts, and binary weights should not be pushed.
+datasets*/
+car_model_training/**/Datasets/
+car_model_training/**/runs/
+car_model_training/**/deploy_models/
+car_model_training/**/__pycache__/
+car_model_training/**/*.pyc
+car_model_training/**/*.cache
+car_model_training/**/*.pt
+car_model_training/**/*.pth
+car_model_training/**/*.onnx
+car_model_training/**/*.om
+car_model_training/**/*.model
+car_model_training/**/*.whl
+car_model_training/yolov5/data/images/
+car_model_training/yolov5/wandb/

@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>smart_car_bringup</name>
+  <version>0.1.0</version>
+  <description>Launch files for the ROS2 smart car framework.</description>
+  <maintainer email="student@example.com">student</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>ament_python</buildtool_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>smart_car_nodes</exec_depend>
+  <exec_depend>smart_car_msgs</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

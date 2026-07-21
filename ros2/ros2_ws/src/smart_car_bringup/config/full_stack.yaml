@@ -1,0 +1,58 @@
+camera:
+  ros__parameters:
+    max_camera_index: 5
+    width: 1280
+    height: 720
+    fps: 30
+    jpeg_quality: 80
+
+lane:
+  ros__parameters:
+    enabled: true
+    alpha: 0.8
+    inference_python: /usr/local/miniconda3/bin/python3
+
+sign_detector:
+  ros__parameters:
+    enabled: true
+    score_threshold: 0.05
+    inference_python: /usr/local/miniconda3/bin/python3
+
+decision:
+  ros__parameters:
+    enabled: false
+    straight_speed: 26
+    turn_speed: 20
+    turn_trigger_deg: 15.0
+    min_turn_strength: 0.25
+    turn_gain: 1.5
+    max_turn_strength: 1.0
+    sign_score_threshold: 0.30
+    turn_region_x_min: 420
+    turn_region_x_max: 950
+    turn_region_y_min: 270
+    first_left_turn_count: 3
+    human_score_threshold: 0.30
+    human_region_x_min: 350
+    human_region_x_max: 750
+    human_region_y_min: 300
+    human_clear_frames: 2
+    park_score_threshold: 0.80
+    park_region_x_min: 900
+    park_region_y_min: 230
+    park_right_turn_gate_enabled: true
+    min_right_turns_before_park: 2
+    back_trigger_y: 300
+    back_rearm_y: 240
+    max_turnarounds: 2
+
+esp32_driver:
+  ros__parameters:
+    baudrate: 115200
+    esp32_name: 1a86_USB_Serial
+    motion_enabled_default: false
+
+monitor:
+  ros__parameters:
+    host: 127.0.0.1
+    port: 8080

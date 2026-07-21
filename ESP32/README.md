@@ -20,10 +20,12 @@ car_ctrl_esp32_pwm/car_ctrl_esp32_pwm.ino
 
 原因：
 
-- 与 `python/motion_test.py`、`python/main.py` 的串口协议兼容。
+- 与 `../base/main.py` 和 `../ros2/ros2_ws` 的串口协议兼容。
 - 不依赖编码器 PID，行为更直接，适合作为当前基础功能保底。
 - 带一次性启动脉冲，低速启动时更容易突破静摩擦。
 - 已用于当前手动控制和运动测试流程。
+
+两套 Atlas 实现都发送相同的 14 字节帧，因此 ESP32 不需要随 base/ROS2 切换重新烧录。
 
 ## 程序说明
 
@@ -61,6 +63,9 @@ rpm
 - Atlas 发来的电机命令会作为 PWM 百分比输出。
 - 串口返回 `SUCC` 或 `FAIL`，与 Atlas Python 端控制逻辑兼容。
 - 从停止到运动或方向反转时，会短暂输出启动脉冲，然后自动回到目标 PWM。
+- 已集成双 MG90S 摄像头云台：GPIO25 控制 Pan，GPIO26 控制 Tilt。
+- 云台上电只回到标定位置 `(93, 162)`，不会自动巡检。
+- Pan 范围为 `0..180`，Tilt 范围为 `90..162`；超出范围的 Atlas 命令会在 ESP32 端自动裁剪。
 
 常用参数：
 
@@ -68,6 +73,8 @@ rpm
 const int8_t MOTOR_SIGN[WHEEL_COUNT] = {1, 1, 1, 1};
 const int16_t START_KICK_PWM = 50;
 const unsigned long START_KICK_MS = 120;
+const int16_t PAN_CENTER = 93;
+const int16_t TILT_CENTER = 162;
 ```
 
 调参建议：

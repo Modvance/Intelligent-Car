@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import atexit
+import os
+import pickle
+import shutil
+import time
+from collections import deque
+
+import serial
+from filelock import FileLock
+
+from src.actions.base_action import BaseAction
+from src.utils.common_utils import SingleTonType
+from src.utils.logger import logger_instance as log
+from src.utils.constant import ESP32_NAME
+from src.utils.init_utils import get_port
+from src.utils.motion_gate import gate_motor_state, is_motion_enabled
+from src.utils.pedestrian_gate import is_pedestrian_blocked
+from src.utils.monitoring import publish_controller
+from src.utils.performance import PerformanceRecorder
+from src.utils.encoder_pid_telemetry import TelemetryStreamParser
+
+
+class Controller(metaclass=SingleTonType):
+    """
+    由单例和文件锁保证的全局唯一的控制器
+    支持执行动作序列及单个动作
+
+    """
+
+    # 保证所有进程内的控制器内的参数保持一致
+    def _set_gloabl_unique(self):
+        with self._lock:
+            if not os.path.exists(self._ser_path):
+                self.reset()
+                self._save()
+            else:
+                try:
+                    self._update()
+                except EOFError:
+                    self.reset()
+                    self._save()
+            self._inc_count()
+
+    def __init__(self) -> None:
+        # 获取当前用户的home目录
+        home = os.path.expanduser('~')
+
+        # 新建临时文件夹
+        self._temp_path = os.path.join(home, 'temp', 'controller')
+        if not os.path.exists(self._temp_path):
+            os.makedirs(self._temp_path, exist_ok=True)
+        # 设置序列化文件保存路径，文件锁路径，全局引用计数路径
+        self._ser_path = os.path.join(self._temp_path, 'controller.pickle')
+        self._lock_path = os.path.join(self._temp_path, 'controller.lock')
+        self._count_path = os.path.join(self._temp_path, 'controller.count')
+
+        # 创建文件锁
+        self._lock = FileLock(self._lock_path)
+
+        # esp32串口信息
+        esp32_port = get_port(ESP32_NAME)
+        self._esp32_port = esp32_port
+        self._ser = serial.Serial(esp32_port, 115200, timeout=0.25)
+        self._check_val = -12345
+        self._telemetry_parser = TelemetryStreamParser()
+        self._motor_telemetry = None
+        self._motor_telemetry_received_at = 0.0
+        self._motor_telemetry_history = deque(maxlen=120)
+
+        # 需要由串口保存的信息
+        # 分别为最后一次成功下发指令的时间，电机+舵机的状态，当前速度，当前舵机角度
+        self.last_modify_time = 0
+        self.state = [0, 0, 0, 0, 0, 0, self._check_val]
+        self.speed = 0
+        self.servo_angle = [0, 0]
+
+        # 设置并更新序列化信息
+        self._set_gloabl_unique()
+
+        # 设置调用__del__方法前调用的去初始化方法
+        atexit.register(self._deinit)
+        
+        self._interrupted = False  # 标记当前是否被中断
+        self.performance = PerformanceRecorder('controller')
+
+    # 重置电机与舵机状态
+    def reset(self):
+        self.speed = 0
+        self.servo_angle = [93, 162]
+        state = [self.speed] * 4 + self.servo_angle + [self._check_val]
+        self.send_to_device(state, action_name='Reset')
+
+    # 执行动作序列
+    def execute(self, action):
+        # 获取文件锁
+        execute_started = time.perf_counter()
+        with self._lock:
+            lock_wait_ms = (time.perf_counter() - execute_started) * 1000
+            # 从序列化文件更新当前控制器的相关参数
+            self._update()
+
+            # 获取输入action的相关attr
+            attr_dict = action.__dict__
+            force = attr_dict.get('force', None)
+            send_time = attr_dict.get('send_time', None)
+            action_seq = attr_dict.get('action_seq', None)
+            update_controller_speed = attr_dict.get('update_controller_speed', True)
+            log.info(f'update_controller_speed: {update_controller_speed}')
+            log.info(f'self.speed: {self.speed}')
+
+            # 判断是否丢弃过时的动作
+            # 如果动作序列带有force（强制执行）属性将无视动作下发时间
+            # 如果动作序列带有下发时间，且动作序列下发时间早于最后一次动作的执行时间，当前动作序列将被丢弃
+            if force is None or not force:
+                if send_time is not None and isinstance(send_time, float) and self.last_modify_time > send_time:
+                    return -1
+
+            # 判断输入动作是否为动作序列或单个简单动作
+            if action_seq is None and isinstance(action, BaseAction):
+                action_seq = [action]
+
+            # 执行动作序列
+            for action in action_seq:
+                if self._interrupted:
+                    log.warn("[Controller] Execution interrupted. Exiting action sequence.")
+                    break  # 提前终止执行
+                # 调用动作的__call__方法
+                state = action(self.speed, self.servo_angle)
+                # 如果当前动作不需要下发指令至ESP32，跳过后续步骤
+                if state is None:
+                    continue
+                state += [self._check_val]
+                # 下发指令并获取到修改的时间戳
+                action_speed = action.speed if action.speed != -1 else self.speed
+                ret, modify_time, serial_latency_ms = self.send_to_device(
+                    state,
+                    action_name=action.__class__.__name__,
+                    action_speed=action_speed,
+                )
+                self.performance.observe(lock_wait_ms=lock_wait_ms, serial_latency_ms=serial_latency_ms)
+                log.info(f'action {action.__class__.__name__} execute {ret}')
+
+                # 更新控制器相关信息
+                self.state = state
+                self.last_modify_time = modify_time
+                if update_controller_speed and action.speed != -1:
+                    self.speed = action.speed
+                if action.servo_angle != [-1, -1]:
+                    self.servo_angle = action.servo_angle
+
+            # 保存控制器的相关信息
+            self._save()
+            return 0
+
+    def interrupt_and_execute(self, new_action):
+        log.info("[Controller] Interrupting current action and switching...")
+        with self._lock:
+            self._update()  # 加载状态
+            self._interrupted = True  # 设置中断标志
+    
+        # 等待一点点时间让执行动作注意到中断（前提是动作实现中轮询了中断）
+        time.sleep(0.05)
+    
+        with self._lock:
+            self._interrupted = False  # 清除中断
+            self.execute(new_action)   # 立即执行新动作
+
+
+    def send_to_device(self, state, action_name='Command', action_speed=None):
+        start = time.time()
+        gated_state = gate_motor_state(
+            state,
+            enabled=is_motion_enabled(default=True),
+            pedestrian_blocked=is_pedestrian_blocked(default=False),
+        )
+        if gated_state != state:
+            log.info(f'motion gate closed, block motor command: {state} -> {gated_state}')
+            state[:] = gated_state
+        # ESP32 accepts exactly seven signed int16 values in little-endian order:
+        # four wheel PWM values, two servo angles, then the -12345 frame marker.
+        msg = b''.join([num.to_bytes(2, byteorder='little', signed=True) for num in state])
+        # 下发编码好的14bytes信息至esp32
+        try:
+            self._ser.write(msg)
+        except Exception:
+            esp32_port = None
+            while esp32_port is None:
+                esp32_port = get_port(ESP32_NAME)
+            self._esp32_port = esp32_port
+            self._ser = serial.Serial(esp32_port, 115200, timeout=0.25)
+            self._telemetry_parser = TelemetryStreamParser()
+            self._ser.write(msg)
+        log.info(f'{state}')
+        # ACK text and encoder telemetry share the USB stream. Keep parsing
+        # every frame while waiting for the legacy SUCC/FAIL acknowledgement.
+        ret = self.recv_from_device()
+        log.debug(f'{ret}')
+        if ret == 'FAIL':
+            log.warn(f'Ultrasonic obstacle avoidance is activated. Please move the car to a safe position.')
+        end = time.time()
+        publish_controller(
+            action_name=action_name,
+            state=state,
+            result=ret,
+            speed=self.speed if action_speed is None else action_speed,
+            servo_angle=state[4:6],
+            serial_port=getattr(self, '_esp32_port', ''),
+            started_at=start,
+            ended_at=end,
+            motor_control=self.latest_motor_control(),
+        )
+        log.debug(f'action execute cost: {end - start}s')
+        return ret, time.time(), (end - start) * 1000
+
+    def _record_telemetry(self, frames):
+        for frame in frames:
+            received_at = time.time()
+            frame["mode"] = "encoder_pid"
+            frame["drive_mode"] = "closed_loop_encoder_pid"
+            frame["enabled"] = True
+            frame["data_source"] = "esp32_encoder"
+            frame["updated_at"] = received_at
+            self._motor_telemetry = frame
+            self._motor_telemetry_received_at = received_at
+            self._motor_telemetry_history.append({
+                "time": received_at,
+                "wheels": [
+                    {
+                        "target_rpm": wheel["target_rpm"],
+                        "measured_rpm": wheel["measured_rpm"],
+                        "pwm": wheel["pwm"],
+                    }
+                    for wheel in frame["wheels"]
+                ],
+            })
+
+    def _consume_serial_bytes(self, data):
+        frames, lines = self._telemetry_parser.feed(data)
+        self._record_telemetry(frames)
+        return lines
+
+    def poll_telemetry(self):
+        """Drain currently buffered ESP32 feedback without waiting for a command."""
+        waiting = getattr(self._ser, "in_waiting", 0)
+        if not waiting:
+            return []
+        return self._consume_serial_bytes(self._ser.read(waiting))
+
+    def latest_motor_control(self, now=None):
+        now = time.time() if now is None else now
+        if self._motor_telemetry is None:
+            return {
+                "mode": "encoder_pid",
+                "drive_mode": "closed_loop_encoder_pid",
+                "enabled": False,
+                "fresh": False,
+                "age_ms": None,
+                "data_source": "esp32_encoder",
+                "wheels": [],
+                "history": [],
+            }
+        snapshot = dict(self._motor_telemetry)
+        age_ms = max(0.0, (now - self._motor_telemetry_received_at) * 1000.0)
+        snapshot["fresh"] = age_ms <= 500.0
+        snapshot["age_ms"] = int(age_ms)
+        snapshot["history"] = list(self._motor_telemetry_history)
+        return snapshot
+
+    def recv_from_device(self):
+        deadline = time.time() + 0.8
+        while time.time() < deadline:
+            waiting = getattr(self._ser, "in_waiting", 0)
+            chunk = self._ser.read(waiting or 1)
+            lines = self._consume_serial_bytes(chunk)
+            if lines:
+                return lines[-1]
+        return "TIMEOUT"
+
+    # 从序列化文件中获取参数并更新当前控制器的相关参数
+    def _update(self):
+        with open(self._ser_path, 'rb') as f:
+            attr_dict = pickle.load(f)
+            for k, v in attr_dict.items():
+                setattr(self, k, v)
+
+    # 保存当前控制器的相关参数至序列化文件
+    def _save(self):
+        with open(self._ser_path, 'wb') as f:
+            pickle.dump(self.get_public_var(), f)
+
+    # 增加全局引用计数
+    def _inc_count(self):
+        count = 1
+        if os.path.exists(self._count_path):
+            with open(self._count_path, 'r') as f:
+                count = int(f.readline()) + 1
+
+        with open(self._count_path, 'w') as f:
+            f.write(str(count))
+
+    # 释放资源前减少全局引用计数
+    def _dec_count(self):
+        count = 0
+        if os.path.exists(self._count_path):
+            with open(self._count_path, 'r') as f:
+                count = int(f.readline()) - 1
+
+            if count > 0:
+                with open(self._count_path, 'w') as f:
+                    f.write(str(count))
+                return False
+            else:
+                return True
+        else:
+            raise RuntimeError('Cannot find the processes count file.')
+
+    # 过滤出需要保存的参数
+    def get_public_var(self):
+        dic = self.__dict__
+        public_var = {key: value for key, value in dic.items() if not key.startswith('_')}
+        return public_var
+
+    # 在__del__方法被调用前执行的去初始化方法
+    def _deinit(self):
+        with self._lock:
+            finalize = self._dec_count()
+        # 引用记数归零则删除临时文件路径,并发送指令保证电机停转
+        if finalize:
+            self.reset()
+            shutil.rmtree(self._temp_path)

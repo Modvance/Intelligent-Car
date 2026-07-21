@@ -1,0 +1,9 @@
+builtin_interfaces/Time stamp
+bool enabled
+bool pedestrian_blocked
+bool action_active
+string status
+string action
+int32 turn_count
+int32 right_turn_count
+int32 turnaround_count

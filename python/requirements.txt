@@ -1,6 +1,0 @@
-# Python=3.9
-pyserial==3.5
-filelock==3.19.1
-numpy==1.24.4
-opencv-python==4.8.1.78
-torch==1.13.0

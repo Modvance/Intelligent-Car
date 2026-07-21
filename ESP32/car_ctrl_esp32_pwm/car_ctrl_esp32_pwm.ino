@@ -16,6 +16,8 @@ const int16_t CHECK_VAL = -12345;
 const uint8_t PACKET_SHORTS = 7;
 const uint8_t PACKET_BYTES = PACKET_SHORTS * sizeof(int16_t);
 
+// Atlas sends [M1, M2, M3, M4, pan, tilt, -12345] as a 14-byte little-endian frame.
+
 Motor motors[WHEEL_COUNT] = {
   Motor(1, 12, 13),
   Motor(2, 14, 15),
@@ -26,11 +28,20 @@ Motor motors[WHEEL_COUNT] = {
 Servo servo_25;
 Servo servo_26;
 
+const int16_t PAN_CENTER = 93;
+const int16_t TILT_CENTER = 162;
+const int16_t PAN_MIN_ANGLE = 0;
+const int16_t PAN_MAX_ANGLE = 180;
+const int16_t TILT_MIN_ANGLE = 90;
+const int16_t TILT_MAX_ANGLE = 162;
+
 // Order: M1, M2, M3, M4. Change one value to -1 if that wheel is reversed.
 const int8_t MOTOR_SIGN[WHEEL_COUNT] = {1, 1, 1, 1};
 
 const int16_t START_KICK_PWM = 50;
 const unsigned long START_KICK_MS = 120;
+
+// Apply the kick only when leaving rest or reversing; steady motion stays at target PWM.
 
 int16_t status[6] = {0, 0, 0, 0, -1, -1};
 int16_t targetSpeeds[WHEEL_COUNT] = {0, 0, 0, 0};
@@ -40,6 +51,12 @@ unsigned long kickUntilMs[WHEEL_COUNT] = {0, 0, 0, 0};
 int16_t clampMotor(int16_t value) {
   if (value > 100) return 100;
   if (value < -100) return -100;
+  return value;
+}
+
+int16_t clampServoAngle(int16_t value, int16_t minimum, int16_t maximum) {
+  if (value < minimum) return minimum;
+  if (value > maximum) return maximum;
   return value;
 }
 
@@ -114,15 +131,21 @@ void stopMotors() {
 }
 
 void setServos(const int16_t angles[2]) {
-  if (angles[0] >= 0 && angles[0] <= 180 && angles[0] != status[S1]) {
-    servo_25.write(angles[0]);
-    status[S1] = angles[0];
-    delay(20);
+  if (angles[0] >= 0) {
+    int16_t panAngle = clampServoAngle(angles[0], PAN_MIN_ANGLE, PAN_MAX_ANGLE);
+    if (panAngle != status[S1]) {
+      servo_25.write(panAngle);
+      status[S1] = panAngle;
+      delay(20);
+    }
   }
 
-  if (angles[1] >= 0 && angles[1] <= 180 && angles[1] != status[S2]) {
-    servo_26.write(angles[1]);
-    status[S2] = angles[1];
+  if (angles[1] >= 0) {
+    int16_t tiltAngle = clampServoAngle(angles[1], TILT_MIN_ANGLE, TILT_MAX_ANGLE);
+    if (tiltAngle != status[S2]) {
+      servo_26.write(tiltAngle);
+      status[S2] = tiltAngle;
+    }
   }
 }
 
@@ -157,7 +180,7 @@ void setup() {
   servo_25.attach(25, 500, 2500);
   servo_26.attach(26, 500, 2500);
 
-  int16_t initAngles[2] = {90, 65};
+  int16_t initAngles[2] = {PAN_CENTER, TILT_CENTER};
   stopMotors();
   setServos(initAngles);
 }

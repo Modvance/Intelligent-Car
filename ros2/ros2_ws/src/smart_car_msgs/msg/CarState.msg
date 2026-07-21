@@ -1,0 +1,10 @@
+builtin_interfaces/Time stamp
+int16[4] motor
+int16[2] servo
+int16 check_value
+int16 speed
+string action
+string result
+string serial_port
+bool motion_enabled
+float32 latency_ms
